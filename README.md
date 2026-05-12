@@ -83,14 +83,26 @@ Mamba-2 (2024) introduces **State Space Duality (SSD)**, connecting SSMs to a ne
 
 ## Environment Setup
 
-### Using Conda
+### Step 1 — Load Mamba module (LANTA)
+
+On LANTA, `mamba` and `conda` are provided as a module. Load it first before any environment commands:
+
+```bash
+ml Mamba
+```
+
+> `ml` is shorthand for `module load`. This must be run every session (login or job script) before using `conda` or `mamba`.
+
+### Step 2 — Create and activate environment
+
+#### Using Conda
 
 ```bash
 conda create -p env python=3.12 -y
 conda activate ./env
 ```
 
-### Using Mamba (faster solver)
+#### Using Mamba (faster solver)
 
 ```bash
 mamba create -p env python=3.12 -y
@@ -343,28 +355,32 @@ cp -p source destination       # Preserve timestamps and permissions
 ## Quick Reference
 
 ```bash
-# 1. Create and activate environment
-mamba create -p env python=3.12 -y && mamba activate ./env
+# 1. Load module (LANTA — required before conda/mamba)
+ml Mamba
 
-# 2. Install dependencies
+# 2. Create and activate environment
+mamba create -p env python=3.12 -y
+mamba activate ./env
+
+# 3. Install dependencies
 pip install -U "huggingface_hub[cli]" 'pandas[pyarrow]' chronos-forecasting
 pip install --default-timeout=1000 torch==2.5.1+cu118 torchvision torchaudio \
     --extra-index-url https://download.pytorch.org/whl/cu118
 
-# 3. Install mamba-ssm (run inside GPU job, not on login node)
+# 4. Install mamba-ssm (run inside GPU job, not on login node)
 module load cuda/11.8
 export CUDA_HOME=$CUDA_DIR
 pip install causal-conv1d>=1.4.0
 pip install mamba-ssm
 
-# 4. Download model
+# 5. Download model
 hf auth login
 hf download amazon/chronos-2 --local-dir ./model
 
-# 5. Submit job
+# 6. Submit job
 sbatch submit.sh
 squeue --me
 
-# 6. Cancel if needed
+# 7. Cancel if needed
 scancel {job_id}
 ```
