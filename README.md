@@ -9,6 +9,7 @@
 - [HPC Cluster Commands](#hpc-cluster-commands)
 - [Model Download (Hugging Face)](#model-download-hugging-face)
 - [Package Installation](#package-installation)
+- [Installing mamba-ssm on LANTA](#installing-mamba-ssm-on-lanta)
 - [File Transfer & Copy](#file-transfer--copy)
 
 ---
@@ -206,6 +207,119 @@ pip install --default-timeout=1000 \
 
 ---
 
+## Installing mamba-ssm on LANTA
+
+`mamba-ssm` is the official Python package for the Mamba architecture. It compiles custom CUDA kernels at install time, so the CUDA toolkit **must be available** before installing.
+
+### 1. Load CUDA Module
+
+On LANTA, load the matching CUDA module before installing:
+
+```bash
+module load cuda/11.8
+```
+
+Check what CUDA versions are available:
+
+```bash
+module avail cuda
+```
+
+### 2. Set CUDA Environment Variables
+
+```bash
+export CUDA_HOME=$CUDA_DIR          # points to the loaded cuda module
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+```
+
+> If `$CUDA_DIR` is not set after `module load`, try `echo $CUDA_HOME` or `which nvcc` to confirm the path.
+
+### 3. Install `causal-conv1d` (required dependency)
+
+Must be installed **before** `mamba-ssm`:
+
+```bash
+pip install causal-conv1d>=1.4.0
+```
+
+### 4. Install `mamba-ssm`
+
+```bash
+pip install mamba-ssm
+```
+
+This step compiles CUDA kernels and may take several minutes. Run it inside an **interactive GPU session** or in a job script — do not run on the login node.
+
+#### Request an interactive GPU session on LANTA
+
+```bash
+srun --partition=gpu --nodes=1 --gpus-per-node=1 --ntasks-per-node=1 --time=01:00:00 --pty bash
+```
+
+Then activate your environment and run the install steps above.
+
+### 5. Install with all optional dependencies
+
+```bash
+pip install "mamba-ssm[causal-conv1d]"
+```
+
+### 6. Verify Installation
+
+```python
+import torch
+from mamba_ssm import Mamba
+
+model = Mamba(
+    d_model=256,    # model dimension
+    d_state=16,     # SSM state expansion factor
+    d_conv=4,       # local convolution width
+    expand=2,       # block expansion factor
+).cuda()
+
+x = torch.randn(2, 64, 256).cuda()   # (batch, sequence_len, d_model)
+y = model(x)
+print(y.shape)    # → torch.Size([2, 64, 256])
+```
+
+### 7. Example sbatch Script for Mamba
+
+```bash
+#!/bin/bash
+#SBATCH --job-name=mamba_run
+#SBATCH --output=logs/%j.out
+#SBATCH --error=logs/%j.err
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --gpus-per-node=1
+#SBATCH --cpus-per-task=8
+#SBATCH --time=04:00:00
+#SBATCH --partition=gpu
+
+module load cuda/11.8
+
+export CUDA_HOME=$CUDA_DIR
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+
+source activate ./env
+
+python train_mamba.py
+```
+
+### Troubleshooting
+
+| Error | Fix |
+|---|---|
+| `nvcc not found` | `module load cuda/11.8` before installing |
+| `CUDA extension build failed` | Ensure `torch` CUDA version matches loaded CUDA module |
+| `ImportError: libcuda.so` | Add `$CUDA_HOME/lib64` to `LD_LIBRARY_PATH` |
+| `causal_conv1d` not found | Run `pip install causal-conv1d>=1.4.0` first |
+| Timeout during build | Run install inside a GPU job, not on login node |
+
+---
+
 ## File Transfer & Copy
 
 ### Download from URL
@@ -237,14 +351,20 @@ pip install -U "huggingface_hub[cli]" 'pandas[pyarrow]' chronos-forecasting
 pip install --default-timeout=1000 torch==2.5.1+cu118 torchvision torchaudio \
     --extra-index-url https://download.pytorch.org/whl/cu118
 
-# 3. Download model
+# 3. Install mamba-ssm (run inside GPU job, not on login node)
+module load cuda/11.8
+export CUDA_HOME=$CUDA_DIR
+pip install causal-conv1d>=1.4.0
+pip install mamba-ssm
+
+# 4. Download model
 hf auth login
 hf download amazon/chronos-2 --local-dir ./model
 
-# 4. Submit job
+# 5. Submit job
 sbatch submit.sh
 squeue --me
 
-# 5. Cancel if needed
+# 6. Cancel if needed
 scancel {job_id}
 ```
